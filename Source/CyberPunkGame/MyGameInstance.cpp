@@ -75,7 +75,7 @@ void UMyGameInstance::SendMatchRequest()
 	TSharedRef<IHttpRequest> Request =
 		FHttpModule::Get().CreateRequest();
 
-	Request->SetURL("http://52.62.244.88:5140/api/match/join");
+	Request->SetURL("http://54.206.115.20:5140/api/match/join");
 	Request->SetVerb("POST");
 	Request->SetHeader("Content-Type", "application/json");
 
