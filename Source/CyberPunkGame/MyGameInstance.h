@@ -8,6 +8,21 @@
 #include "Engine/GameInstance.h"
 #include "MyGameInstance.generated.h"
 
+USTRUCT(BlueprintType)
+struct FMatchResult
+{
+	GENERATED_BODY()
+
+	UPROPERTY(BlueprintReadOnly)
+	bool IsMatched;
+
+	UPROPERTY(BlueprintReadOnly)
+	FString MatchId;
+
+	UPROPERTY(BlueprintReadOnly)
+	TArray<FString> Players;
+};
+
 
 UCLASS()
 class CYBERPUNKGAME_API UMyGameInstance : public UGameInstance
@@ -26,6 +41,9 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void SendMatchRequest();
 
+	UFUNCTION(BlueprintImplementableEvent, Category = "Event")
+	void SendMatchFoundResult(const FMatchResult& Result);
+
 private:
 	void OnLoginComplete(
 		int32 LocalUserNum,
@@ -37,3 +55,5 @@ private:
 	IOnlineIdentityPtr Identity;
 
 };
+
+

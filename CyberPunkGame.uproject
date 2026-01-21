@@ -78,6 +78,10 @@
 		{
 			"Name": "OnlineFramework",
 			"Enabled": true
+		},
+		{
+			"Name": "AdvancedSteamSessions",
+			"Enabled": false
 		}
 	]
 }

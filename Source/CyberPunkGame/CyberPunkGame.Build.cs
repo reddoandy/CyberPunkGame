@@ -16,7 +16,9 @@ public class CyberPunkGame : ModuleRules
 			"EnhancedInput",
             "OnlineSubsystem",
             "OnlineSubsystemUtils",
-			"Http"
+			"Http",
+            "Json",
+			"JsonUtilities"
         });
 	}
 

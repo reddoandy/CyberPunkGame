@@ -3,6 +3,13 @@
 
 #include "MyGameInstance.h"
 #include "HTTP.h"
+#include "HttpModule.h"
+#include "Interfaces/IHttpRequest.h"
+#include "Interfaces/IHttpResponse.h"
+#include "Serialization/JsonWriter.h"
+#include "Serialization/JsonSerializer.h"
+#include "Serialization/JsonReader.h"
+#include "Dom/JsonObject.h"
 
 void UMyGameInstance::Init() 
 {
@@ -16,6 +23,24 @@ void UMyGameInstance::Init()
 	}
 
 	Identity = Subsystem->GetIdentityInterface();
+	if (!Identity.IsValid())
+	{
+		UE_LOG(LogTemp, Error, TEXT("Identity interface invalid"));
+		return;
+	}
+
+	// 嘗試取得 LocalUserNum = 0 的 UserId
+	TSharedPtr<const FUniqueNetId> UserId = Identity->GetUniquePlayerId(0);
+	if (UserId.IsValid())
+	{
+		CachedEosUserId = UserId->ToString();
+		UE_LOG(LogTemp, Log, TEXT("Found EOS UserId: %s"), *CachedEosUserId);
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("No EOS user found, need login"));
+		// 這裡可以觸發 LoginEOS()
+	}
 }
 
 void UMyGameInstance::LoginEOS()
@@ -72,22 +97,27 @@ void UMyGameInstance::SendMatchRequest()
 		return;
 	}
 
-	TSharedRef<IHttpRequest> Request =
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request =
 		FHttpModule::Get().CreateRequest();
 
-	Request->SetURL("http://54.206.115.20:5140/api/match/join");
+	Request->SetURL("http://54.206.115.20:5140/api/match/request");
 	Request->SetVerb("POST");
 	Request->SetHeader("Content-Type", "application/json");
 
-	FString Body = FString::Printf(
-		TEXT("{\"eosId\":\"%s\"}"),
-		*CachedEosUserId
-	);
+	TSharedPtr<FJsonObject> Json = MakeShared<FJsonObject>();
+	Json->SetStringField(TEXT("EosId"), CachedEosUserId);
+	Json->SetStringField(TEXT("region"), TEXT("ap-southeast-2a"));
 
-	Request->SetContentAsString(Body);
+	FString RequestBody;
+	TSharedRef<TJsonWriter<>> Writer =
+		TJsonWriterFactory<>::Create(&RequestBody);
+
+	FJsonSerializer::Serialize(Json.ToSharedRef(), Writer);
+
+	Request->SetContentAsString(RequestBody);
 
 	Request->OnProcessRequestComplete().BindLambda(
-		[](FHttpRequestPtr Req, FHttpResponsePtr Resp, bool bSuccess)
+		[this](FHttpRequestPtr Req, FHttpResponsePtr Resp, bool bSuccess)
 		{
 			if (!bSuccess || !Resp.IsValid())
 			{
@@ -95,8 +125,34 @@ void UMyGameInstance::SendMatchRequest()
 				return;
 			}
 
-			UE_LOG(LogTemp, Log, TEXT("Backend response: %s"),
-				*Resp->GetContentAsString());
+			FString ResponseStr = Resp->GetContentAsString();
+			UE_LOG(LogTemp, Log, TEXT("Backend response: %s"), *ResponseStr);
+
+			TSharedPtr<FJsonObject> JsonObject;
+			TSharedRef<TJsonReader<>> Reader =
+				TJsonReaderFactory<>::Create(ResponseStr);
+
+			if (!FJsonSerializer::Deserialize(Reader, JsonObject) || !JsonObject.IsValid()) 
+			{
+				UE_LOG(LogTemp, Error, TEXT("Failed to parse JSON"));
+				return;
+			}
+
+			FMatchResult MatchResult;
+
+			MatchResult.IsMatched = JsonObject->GetBoolField(TEXT("matched"));
+
+			JsonObject->TryGetStringField(TEXT("matchId"),MatchResult.MatchId);
+
+			const TArray<TSharedPtr<FJsonValue>>* PlayersArray;
+			if (JsonObject->TryGetArrayField(TEXT("players"), PlayersArray)) 
+			{
+				for (const TSharedPtr<FJsonValue>& Val : *PlayersArray) 
+				{
+					MatchResult.Players.Add(Val->AsString());
+				}
+			}
+			SendMatchFoundResult(MatchResult);
 		}
 	);
 
