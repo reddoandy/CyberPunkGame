@@ -5,6 +5,7 @@
 #include "CoreMinimal.h"
 #include "OnlineSubsystem.h"
 #include "Interfaces/OnlineIdentityInterface.h"
+#include "Interfaces/OnlineSessionInterface.h"
 #include "Engine/GameInstance.h"
 #include "MyGameInstance.generated.h"
 
@@ -21,7 +22,9 @@ struct FMatchResult
 
 	UPROPERTY(BlueprintReadOnly)
 	TArray<FString> Players;
+
 };
+
 
 
 UCLASS()
@@ -33,16 +36,47 @@ public:
 	virtual void Init() override;
 
 	UFUNCTION(BlueprintCallable)
-	void LoginEOS();
+	void LoginEOS(class APlayerController*PlayerController);
 
 	FString CachedEosUserId;
-	FDelegateHandle LoginCompleteHandle;
+	FDelegateHandle LoginHandle;
+	FDelegateHandle ServerLoginCompleteHandle;
+	FOnLoginCompleteDelegate LoginComplete;
 
 	UFUNCTION(BlueprintCallable)
 	void SendMatchRequest();
 
 	UFUNCTION(BlueprintImplementableEvent, Category = "Event")
 	void SendMatchFoundResult(const FMatchResult& Result);
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void ServerCompleteLogin();
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void PlayerCompleteLogin();
+
+	UFUNCTION(BlueprintCallable)
+	void GetLoggedUserId();
+
+	UFUNCTION(BlueprintCallable)
+	void CheckLoginEOS_Server();
+
+	UFUNCTION(BlueprintCallable)
+	void DebugEOSLoginState();
+
+	UFUNCTION(BlueprintCallable)
+	void SyncUniqueIdToPlayer(int32 LocalUserNum);
+
+	//UFUNCTION(BlueprintCallable)
+	//static UMyGameInstance*LoginEOSAuth(class APlayerController* PlayerController);
+
+	UFUNCTION(BlueprintCallable)
+	void SaveLogin();
+
+	//UFUNCTION(BlueprintCallable)
+	//void MyFindSessions();
+
+
 
 private:
 	void OnLoginComplete(
@@ -52,7 +86,22 @@ private:
 		const FString& Error
 	);
 
+	void OnCompleted(int32 LocalUserNum, bool bWasSuccessful, const FUniqueNetId& UserId, const FString& ErrorVal);
+
 	IOnlineIdentityPtr Identity;
+	TWeakObjectPtr<APlayerController> PlayerControllerWeakPtr;
+
+	FOnLoginCompleteDelegate Delegate;
+
+	FDelegateHandle DelegateHandle;
+
+	void OnServerLoginComplete(
+		int32 LocalUserNum,
+		bool bWasSuccessful,
+		const FUniqueNetId& UserId,
+		const FString& Error);
+
+	FTimerHandle EOSLoginTimerHandle;
 
 };
 

@@ -2,7 +2,7 @@
 
 
 #include "MyGameInstance.h"
-#include "HTTP.h"
+#include "Http.h"
 #include "HttpModule.h"
 #include "Interfaces/IHttpRequest.h"
 #include "Interfaces/IHttpResponse.h"
@@ -10,13 +10,121 @@
 #include "Serialization/JsonSerializer.h"
 #include "Serialization/JsonReader.h"
 #include "Dom/JsonObject.h"
+#include "Online.h"
+#include "MyPlayerControllerCpp.h"
+#include <Kismet/GameplayStatics.h>
+#include "GameFramework/PlayerState.h"
+#include "GameFramework/PlayerController.h"
+#include "Engine/LocalPlayer.h"
+#include "OnlineSubsystem.h"
+#include "Interfaces/OnlineIdentityInterface.h"
 
 void UMyGameInstance::Init() 
 {
 	Super::Init();
 
+	if (IsRunningDedicatedServer()) 
+	{
+		FTimerHandle TempHandle;
+		GetWorld()->GetTimerManager().SetTimer(
+			TempHandle,
+			this,
+			&UMyGameInstance::CheckLoginEOS_Server,
+			1.0f,
+			false
+		);
+		
+	}
+	//else
+	//{
+		//GetLoggedUserId();
+
+		//if (UWorld* World = GetWorld()) 
+		//{
+			//World->GetTimerManager().SetTimer(
+			//	EOSLoginTimerHandle,
+				//this,
+				//&UMyGameInstance::LoginEOS,
+				//2.0f,
+				//false
+			//);
+		//}
+		
+	//}
+	
+}
+
+void UMyGameInstance::DebugEOSLoginState()
+{
 	IOnlineSubsystem* Subsystem = IOnlineSubsystem::Get(TEXT("EOS"));
-	if (!Subsystem) 
+	if (!Subsystem)
+	{
+		UE_LOG(LogTemp, Error, TEXT("EOS subsystem not found"));
+		return;
+	}
+
+	Identity= Subsystem->GetIdentityInterface();
+	if (!Identity.IsValid())
+	{
+		UE_LOG(LogTemp, Error, TEXT("EOS Identity invalid"));
+		return;
+	}
+
+	ELoginStatus::Type Status = Identity->GetLoginStatus(0);
+
+	UE_LOG(LogTemp, Warning, TEXT("LoginStatus(0) = %d"), (int32)Status);
+
+	TSharedPtr<const FUniqueNetId> NetId = Identity->GetUniquePlayerId(0);
+
+	if (NetId.IsValid())
+	{
+		UE_LOG(LogTemp, Warning, TEXT("UniqueNetId(0) = %s"), *NetId->ToString());
+	}
+	else
+	{
+		UE_LOG(LogTemp, Error, TEXT("UniqueNetId(0) is NULL"));
+	}
+}
+
+void UMyGameInstance::CheckLoginEOS_Server()
+{
+	IOnlineSubsystem* Subsystem = IOnlineSubsystem::Get(TEXT("EOS"));
+	if (!Subsystem)
+	{
+		UE_LOG(LogTemp, Error, TEXT("EOS subsystem not found"));
+		return;
+	}
+	else
+	{
+		UE_LOG(LogTemp, Log, TEXT("EOS is ready"));
+		ServerCompleteLogin();
+	}
+
+}
+
+void UMyGameInstance::OnServerLoginComplete(
+	int32 LocalUserNum,
+	bool bWasSuccessful,
+	const FUniqueNetId& UserId,
+	const FString& Error
+)
+{
+	if (!bWasSuccessful)
+	{
+		UE_LOG(LogTemp, Error, TEXT("Server EOS login failed: %s"), *Error);
+		return;
+	}
+
+	UE_LOG(LogTemp, Log, TEXT("Dedicated Server EOS login success: %s"), *UserId.ToString());
+
+	//  這裡才可以 Create Advanced Session
+	ServerCompleteLogin();
+}
+
+void UMyGameInstance::GetLoggedUserId() 
+{
+	IOnlineSubsystem* Subsystem = IOnlineSubsystem::Get(TEXT("EOS"));
+	if (!Subsystem)
 	{
 		UE_LOG(LogTemp, Error, TEXT("EOS Subsystem not found"));
 		return;
@@ -35,40 +143,82 @@ void UMyGameInstance::Init()
 	{
 		CachedEosUserId = UserId->ToString();
 		UE_LOG(LogTemp, Log, TEXT("Found EOS UserId: %s"), *CachedEosUserId);
+		PlayerCompleteLogin();
 	}
 	else
 	{
 		UE_LOG(LogTemp, Log, TEXT("No EOS user found, need login"));
 		// 這裡可以觸發 LoginEOS()
+		//LoginEOS();
 	}
 }
 
-void UMyGameInstance::LoginEOS()
+void UMyGameInstance::SaveLogin() 
 {
+	IOnlineSubsystem* Subsystem = IOnlineSubsystem::Get(TEXT("EOS"));
+	Identity = Subsystem->GetIdentityInterface();
+	UE_LOG(LogTemp, Warning, TEXT("Identity save valid"));
+
+}
+
+void UMyGameInstance::LoginEOS(class APlayerController*PlayerController)
+{
+	IOnlineSubsystem* Subsystem = IOnlineSubsystem::Get(TEXT("EOS"));
+	if (!Subsystem)
+	{
+		UE_LOG(LogTemp, Error, TEXT("EOS subsystem not found"));
+		return;
+	}
+
+	Identity = Subsystem->GetIdentityInterface();
 	if (!Identity.IsValid())
 	{
 		UE_LOG(LogTemp, Error, TEXT("Identity invalid"));
 		return;
 	}
+	PlayerControllerWeakPtr = PlayerController;
 
-	if (LoginCompleteHandle.IsValid())
+	ULocalPlayer* LocalPlayer = Cast<ULocalPlayer>(PlayerControllerWeakPtr->Player);
+	if (!LocalPlayer)
 	{
-		Identity->OnLoginCompleteDelegates->Remove(LoginCompleteHandle);
-		LoginCompleteHandle.Reset();
+		UE_LOG(LogTemp, Warning, TEXT("LocalPlayer not ready, retry login..."));
+		//GetTimerManager().SetTimerForNextTick(this, &UMyGameInstance::LoginEOS(PlayerController));
+		return;
 	}
 
-	LoginCompleteHandle =
-		Identity->OnLoginCompleteDelegates->AddUObject(
-			this,
-			&UMyGameInstance::OnLoginComplete
-		);
+	int32 UserNum = LocalPlayer->GetControllerId();
+	UE_LOG(LogTemp, Warning, TEXT("LoginEOS: ControllerId = %d"), UserNum);
+
+	// 如果已經登入就直接同步
+	//if (Identity->GetLoginStatus(UserNum) == ELoginStatus::LoggedIn)
+	//{
+	//	UE_LOG(LogTemp, Warning, TEXT("Already logged in, syncing UniqueNetId"));
+	//	TSharedPtr<const FUniqueNetId> UserId = Identity->GetUniquePlayerId(UserNum);
+	//	CachedEosUserId = UserId->ToString();
+	//	UE_LOG(LogTemp, Log, TEXT("Found EOS UserId: %s"), *CachedEosUserId);
+		
+	//}
+
+	UE_LOG(LogTemp, Warning, TEXT("Calling EOS Login..."));
+	if (LoginHandle.IsValid())
+	{
+		Identity->ClearOnLoginCompleteDelegate_Handle(UserNum, LoginHandle);
+		LoginHandle.Reset();
+	}
+
+	
+	// Delegate
+	//LoginComplete = FOnLoginCompleteDelegate::CreateUObject(this, &UMyGameInstance::OnLoginComplete);
+	LoginHandle = Identity->AddOnLoginCompleteDelegate_Handle(LocalPlayer->GetControllerId(), FOnLoginCompleteDelegate::CreateUObject(this, &UMyGameInstance::OnLoginComplete));
+	
 
 	FOnlineAccountCredentials Credentials;
 	Credentials.Type = TEXT("accountportal");
 	Credentials.Id = TEXT("");
 	Credentials.Token = TEXT("");
+	UE_LOG(LogTemp, Warning, TEXT("Calling Identity->Login()..."));
+	Identity->Login(UserNum, Credentials);
 
-	Identity->Login(0, Credentials);
 }
 
 void UMyGameInstance::OnLoginComplete(
@@ -78,16 +228,84 @@ void UMyGameInstance::OnLoginComplete(
 	const FString& Error
 )
 {
+	if (Identity.IsValid() && LoginHandle.IsValid())
+	{
+		Identity->ClearOnLoginCompleteDelegate_Handle(LocalUserNum, LoginHandle);
+		LoginHandle.Reset();
+	}
+
 	if (!bWasSuccessful)
 	{
-		UE_LOG(LogTemp, Error, TEXT("EOS Login failed: %s"), *Error);
+		UE_LOG(LogTemp, Error, TEXT("EOS Login Failed: %s"), *Error);
 		return;
 	}
 
+	ULocalPlayer* LocalPlayer = Cast<ULocalPlayer>(PlayerControllerWeakPtr->Player);
+
+	
+
 	CachedEosUserId = UserId.ToString();
+	//FUniqueNetIdRepl NetId(UserId.AsShared());
+	TSharedPtr<const FUniqueNetId> NetId = UserId.AsShared();
+	//FUniqueNetIdRepl NetId(CachedEosUserId);
+
+	LocalPlayer->SetCachedUniqueNetId(NetId);
 
 	UE_LOG(LogTemp, Log, TEXT("EOS Login success: %s"), *CachedEosUserId);
+
+	if (APlayerState* PS = PlayerControllerWeakPtr->PlayerState) 
+	{
+		PS->SetUniqueId(UserId.AsShared());
+		//UE_LOG(LogTemp, Warning, TEXT("PlayerState UniqueId set: %s"), *NetId.ToString());
+	}
+	else
+	{
+		UE_LOG(LogTemp, Warning, TEXT("PlayerState is NULL (may not be created yet)"));
+	}
+
+
+	PlayerCompleteLogin();
+	//SyncUniqueIdToPlayer(LocalUserNum);
 }
+
+void UMyGameInstance::SyncUniqueIdToPlayer(int32 LocalUserNum)
+{
+	APlayerController* PC = UGameplayStatics::GetPlayerController(GetWorld(), 0);
+	if (!PC)
+	{
+		UE_LOG(LogTemp, Error, TEXT("SyncUniqueIdToPlayer: PC null"));
+		return;
+	}
+
+	ULocalPlayer* LP = PC->GetLocalPlayer();
+	if (!LP)
+	{
+		UE_LOG(LogTemp, Error, TEXT("SyncUniqueIdToPlayer: LocalPlayer null"));
+		return;
+	}
+
+	TSharedPtr<const FUniqueNetId> NetId = Identity->GetUniquePlayerId(LocalUserNum);
+	if (!NetId.IsValid())
+	{
+		UE_LOG(LogTemp, Error, TEXT("SyncUniqueIdToPlayer: UniqueNetId invalid"));
+		return;
+	}
+
+	FUniqueNetIdRepl ReplId(NetId);
+
+	// LocalPlayer cache
+	LP->SetCachedUniqueNetId(ReplId);
+
+	// PlayerState UniqueId
+	if (APlayerState*PS=PC->PlayerState.Get())
+	{
+		PS->SetUniqueId(ReplId);
+	}
+	PlayerCompleteLogin();
+	UE_LOG(LogTemp, Warning, TEXT("UniqueNetId synced: %s"), *NetId->ToString());
+}
+
+
 
 void UMyGameInstance::SendMatchRequest()
 {

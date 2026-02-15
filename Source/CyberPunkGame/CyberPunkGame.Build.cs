@@ -18,9 +18,14 @@ public class CyberPunkGame : ModuleRules
             "OnlineSubsystemUtils",
 			"Http",
             "Json",
-			"JsonUtilities"
-        });
-	}
+			"JsonUtilities",
+            "EOSSDK",
+            "OnlineSubsystemEOS",
+            "Networking", 
+			"Sockets"
+    });
+
+    }
 
 
 }

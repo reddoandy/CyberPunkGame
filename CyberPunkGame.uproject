@@ -1,6 +1,6 @@
 {
 	"FileVersion": 3,
-	"EngineAssociation": "5.4",
+	"EngineAssociation": "{37F1A323-4217-9058-3508-FD9F3C219402}",
 	"Category": "",
 	"Description": "",
 	"Modules": [
@@ -81,6 +81,10 @@
 		},
 		{
 			"Name": "AdvancedSteamSessions",
+			"Enabled": false
+		},
+		{
+			"Name": "Fab",
 			"Enabled": false
 		}
 	]
