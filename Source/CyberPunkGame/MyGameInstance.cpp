@@ -153,12 +153,9 @@ void UMyGameInstance::GetLoggedUserId()
 	}
 }
 
-void UMyGameInstance::SaveLogin() 
+void UMyGameInstance::SaveLogin(FString Id) 
 {
-	IOnlineSubsystem* Subsystem = IOnlineSubsystem::Get(TEXT("EOS"));
-	Identity = Subsystem->GetIdentityInterface();
-	UE_LOG(LogTemp, Warning, TEXT("Identity save valid"));
-
+	CachedEosUserId = Id;
 }
 
 void UMyGameInstance::LoginEOS(class APlayerController*PlayerController)
@@ -315,16 +312,17 @@ void UMyGameInstance::SendMatchRequest()
 		return;
 	}
 
+	
 	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request =
 		FHttpModule::Get().CreateRequest();
+	Request->SetURL(TEXT("http://43.213.182.84:5140/api/match/queue"));
+	Request->SetVerb(TEXT("POST"));
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
 
-	Request->SetURL("http://54.206.115.20:5140/api/match/request");
-	Request->SetVerb("POST");
-	Request->SetHeader("Content-Type", "application/json");
 
 	TSharedPtr<FJsonObject> Json = MakeShared<FJsonObject>();
 	Json->SetStringField(TEXT("EosId"), CachedEosUserId);
-	Json->SetStringField(TEXT("region"), TEXT("ap-southeast-2a"));
+	Json->SetNumberField(TEXT("MMR"), 0);//這邊之後改成MMR
 
 	FString RequestBody;
 	TSharedRef<TJsonWriter<>> Writer =
@@ -334,6 +332,7 @@ void UMyGameInstance::SendMatchRequest()
 
 	Request->SetContentAsString(RequestBody);
 
+	
 	Request->OnProcessRequestComplete().BindLambda(
 		[this](FHttpRequestPtr Req, FHttpResponsePtr Resp, bool bSuccess)
 		{
@@ -343,41 +342,84 @@ void UMyGameInstance::SendMatchRequest()
 				return;
 			}
 
+			int32 Code = Resp->GetResponseCode();
+
+			if (Code == 200) 
+			{
+				UE_LOG(LogTemp, Warning, TEXT("Match request success"));
+				StartPollingMatchStatus();
+			}
+			else
+			{
+				UE_LOG(LogTemp, Error, TEXT("Backend returned error: %d"), Code);
+			}
+		}
+	);
+
+	
+	Request->ProcessRequest();
+}
+
+void UMyGameInstance::StartPollingMatchStatus()
+{
+	GetWorld()->GetTimerManager().SetTimer(
+		MatchPollTimer,
+		this,
+		&UMyGameInstance::PollingMatchStatus,
+		3.0f,
+		true
+	);
+}
+
+void UMyGameInstance::StopPollingMatchStatus()
+{
+	GetWorld()->GetTimerManager().ClearTimer(MatchPollTimer);
+}
+
+void UMyGameInstance::PollingMatchStatus()
+{
+	FString Url = FString::Printf(
+		TEXT("http://43.213.182.84:5140/api/match/check/%s")
+			,*CachedEosUserId
+	);
+
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request =
+		FHttpModule::Get().CreateRequest();
+
+	Request->SetURL(Url);
+	Request->SetVerb("GET");
+
+	Request->OnProcessRequestComplete().BindLambda(
+		[this](FHttpRequestPtr Req, FHttpResponsePtr Resp, bool bSuccess)
+		{
+			if (!bSuccess || !Resp.IsValid())
+				return;
+
 			FString ResponseStr = Resp->GetContentAsString();
-			UE_LOG(LogTemp, Log, TEXT("Backend response: %s"), *ResponseStr);
 
 			TSharedPtr<FJsonObject> JsonObject;
 			TSharedRef<TJsonReader<>> Reader =
 				TJsonReaderFactory<>::Create(ResponseStr);
 
-			if (!FJsonSerializer::Deserialize(Reader, JsonObject) || !JsonObject.IsValid()) 
+			if (FJsonSerializer::Deserialize(Reader, JsonObject) &&
+				JsonObject.IsValid())
 			{
-				UE_LOG(LogTemp, Error, TEXT("Failed to parse JSON"));
-				return;
-			}
+				bool Ready;
+				JsonObject->TryGetBoolField(TEXT("ServerReady"), Ready);
 
-			FMatchResult MatchResult;
-
-			MatchResult.IsMatched = JsonObject->GetBoolField(TEXT("matched"));
-
-			JsonObject->TryGetStringField(TEXT("matchId"),MatchResult.MatchId);
-
-			const TArray<TSharedPtr<FJsonValue>>* PlayersArray;
-			if (JsonObject->TryGetArrayField(TEXT("players"), PlayersArray)) 
-			{
-				for (const TSharedPtr<FJsonValue>& Val : *PlayersArray) 
+				if (Ready == true) 
 				{
-					MatchResult.Players.Add(Val->AsString());
+					StopPollingMatchStatus();
+					FString matchid;
+					JsonObject->TryGetStringField(TEXT("MatchId"), matchid);
+					ReadyToJoinMatch(matchid);
 				}
 			}
-			SendMatchFoundResult(MatchResult);
 		}
 	);
 
 	Request->ProcessRequest();
 }
-
-
 
 
 

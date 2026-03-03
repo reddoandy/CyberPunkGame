@@ -22,7 +22,6 @@ struct FMatchResult
 
 	UPROPERTY(BlueprintReadOnly)
 	TArray<FString> Players;
-
 };
 
 
@@ -42,6 +41,7 @@ public:
 	FDelegateHandle LoginHandle;
 	FDelegateHandle ServerLoginCompleteHandle;
 	FOnLoginCompleteDelegate LoginComplete;
+	FTimerHandle MatchPollTimer;
 
 	UFUNCTION(BlueprintCallable)
 	void SendMatchRequest();
@@ -71,10 +71,13 @@ public:
 	//static UMyGameInstance*LoginEOSAuth(class APlayerController* PlayerController);
 
 	UFUNCTION(BlueprintCallable)
-	void SaveLogin();
+	void SaveLogin(FString Id);
 
 	//UFUNCTION(BlueprintCallable)
 	//void MyFindSessions();
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void ReadyToJoinMatch(FString& MatchId);
 
 
 
@@ -101,7 +104,11 @@ private:
 		const FUniqueNetId& UserId,
 		const FString& Error);
 
-	FTimerHandle EOSLoginTimerHandle;
+	void StartPollingMatchStatus();
+
+	void StopPollingMatchStatus();
+
+	void PollingMatchStatus();
 
 };
 
