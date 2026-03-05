@@ -77,8 +77,10 @@ public:
 	//void MyFindSessions();
 
 	UFUNCTION(BlueprintImplementableEvent)
-	void ReadyToJoinMatch(FString& MatchId);
+	void ReadyToJoinMatchEvent(const int32 &MatchPort);
 
+	UFUNCTION(BlueprintCallable)
+	void MyJoinMatch(class APlayerController *PlayerController ,int Port);
 
 
 private:

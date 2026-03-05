@@ -347,6 +347,7 @@ void UMyGameInstance::SendMatchRequest()
 			if (Code == 200) 
 			{
 				UE_LOG(LogTemp, Warning, TEXT("Match request success"));
+				UE_LOG(LogTemp, Log, TEXT("PlayerId:%s"),*CachedEosUserId);
 				StartPollingMatchStatus();
 			}
 			else
@@ -379,15 +380,25 @@ void UMyGameInstance::StopPollingMatchStatus()
 void UMyGameInstance::PollingMatchStatus()
 {
 	FString Url = FString::Printf(
-		TEXT("http://43.213.182.84:5140/api/match/check/%s")
-			,*CachedEosUserId
-	);
+		TEXT("http://43.213.182.84:5140/api/match/check"));
 
 	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request =
 		FHttpModule::Get().CreateRequest();
 
-	Request->SetURL(Url);
-	Request->SetVerb("GET");
+	Request->SetURL(TEXT("http://43.213.182.84:5140/api/match/check"));
+	Request->SetVerb("POST");
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+
+	TSharedPtr<FJsonObject> Json = MakeShared<FJsonObject>();
+	Json->SetStringField(TEXT("PlayerId"), CachedEosUserId);
+
+	FString RequestBody;
+	TSharedRef<TJsonWriter<>> Writer =
+		TJsonWriterFactory<>::Create(&RequestBody);
+
+	FJsonSerializer::Serialize(Json.ToSharedRef(), Writer);
+
+	Request->SetContentAsString(RequestBody);
 
 	Request->OnProcessRequestComplete().BindLambda(
 		[this](FHttpRequestPtr Req, FHttpResponsePtr Resp, bool bSuccess)
@@ -404,21 +415,28 @@ void UMyGameInstance::PollingMatchStatus()
 			if (FJsonSerializer::Deserialize(Reader, JsonObject) &&
 				JsonObject.IsValid())
 			{
-				bool Ready;
+				bool Ready =false;
 				JsonObject->TryGetBoolField(TEXT("ServerReady"), Ready);
 
 				if (Ready == true) 
 				{
 					StopPollingMatchStatus();
-					FString matchid;
-					JsonObject->TryGetStringField(TEXT("MatchId"), matchid);
-					ReadyToJoinMatch(matchid);
+					int matchport;
+					JsonObject->TryGetNumberField(TEXT("MatchPort"), matchport);
+					ReadyToJoinMatchEvent(matchport);
 				}
 			}
 		}
 	);
 
 	Request->ProcessRequest();
+}
+
+void UMyGameInstance::MyJoinMatch(class APlayerController *PC, int32 port) 
+{
+	FString Address = FString::Printf(TEXT("43.213.182.84:%d"), port);
+	PC->ClientTravel(Address, TRAVEL_Absolute);
+	UE_LOG(LogTemp, Log, TEXT("Join %s"), *Address);
 }
 
 
