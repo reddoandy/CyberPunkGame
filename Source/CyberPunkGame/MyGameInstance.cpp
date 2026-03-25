@@ -439,5 +439,49 @@ void UMyGameInstance::MyJoinMatch(class APlayerController *PC, int32 port)
 	UE_LOG(LogTemp, Log, TEXT("Join %s"), *Address);
 }
 
+void UMyGameInstance::PullTeamInfo(FString Id, FString& Team, int32& Index) 
+{
+	
+
+	TSharedRef<IHttpRequest, ESPMode::ThreadSafe> Request =
+		FHttpModule::Get().CreateRequest();
+
+	Request->SetURL(TEXT("http://43.213.182.84:5140/api/match/getTeam"));
+	Request->SetVerb("POST");
+	Request->SetHeader(TEXT("Content-Type"), TEXT("application/json"));
+
+	TSharedPtr<FJsonObject> Json = MakeShared<FJsonObject>();
+	Json->SetStringField(TEXT("PlayerId"), Id);
+
+	FString RequestBody;
+	TSharedRef<TJsonWriter<>> Writer =
+		TJsonWriterFactory<>::Create(&RequestBody);
+
+	FJsonSerializer::Serialize(Json.ToSharedRef(), Writer);
+
+	Request->SetContentAsString(RequestBody);
+
+	Request->OnProcessRequestComplete().BindLambda(
+		[this,&Team,&Index](FHttpRequestPtr Req, FHttpResponsePtr Resp, bool bSuccess)
+		{
+			if (!bSuccess || !Resp.IsValid())
+				return;
+			FString ResponseStr = Resp->GetContentAsString();
+
+			TSharedPtr<FJsonObject> JsonObject;
+			TSharedRef<TJsonReader<>> Reader =
+				TJsonReaderFactory<>::Create(ResponseStr);
+
+			if (FJsonSerializer::Deserialize(Reader, JsonObject) &&
+				JsonObject.IsValid())
+			{
+				JsonObject->TryGetStringField(TEXT("Team"), Team);				
+				JsonObject->TryGetNumberField(TEXT("Index"), Index);
+			}
+		}
+	);
+	Request->ProcessRequest();
+}
+
 
 

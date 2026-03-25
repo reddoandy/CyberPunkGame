@@ -82,6 +82,9 @@ public:
 	UFUNCTION(BlueprintCallable)
 	void MyJoinMatch(class APlayerController *PlayerController ,int Port);
 
+	UFUNCTION(Blueprintcallable)
+	void PullTeamInfo(FString Id, FString& Team, int32& Index);
+
 
 private:
 	void OnLoginComplete(
