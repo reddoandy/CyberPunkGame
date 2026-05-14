@@ -21,10 +21,8 @@ struct FMatchResult
 	FString MatchId;
 
 	UPROPERTY(BlueprintReadOnly)
-	TArray<FString> Players;
+	TArray<FString> Players;	
 };
-
-
 
 UCLASS()
 class CYBERPUNKGAME_API UMyGameInstance : public UGameInstance
@@ -84,6 +82,11 @@ public:
 
 	UFUNCTION(Blueprintcallable)
 	void PullTeamInfo(FString Id, FString& Team, int32& Index);
+
+	UFUNCTION(BlueprintImplementableEvent)
+	void PullTeamInfoComplete(const FString& Team,const int32& Index);
+
+
 
 
 private:

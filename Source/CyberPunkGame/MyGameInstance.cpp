@@ -477,6 +477,8 @@ void UMyGameInstance::PullTeamInfo(FString Id, FString& Team, int32& Index)
 			{
 				JsonObject->TryGetStringField(TEXT("Team"), Team);				
 				JsonObject->TryGetNumberField(TEXT("Index"), Index);
+
+				PullTeamInfoComplete(Team,Index);
 			}
 		}
 	);
